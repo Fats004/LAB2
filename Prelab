@@ -1,0 +1,65 @@
+;*******************************************************************************************************************************************
+; Universidad del Valle de Guatemala
+; IE2023 Programación de Microcontroladores
+; Contador.asm
+; Proyecto: Contador 4 Bits
+; Hardware: ATMEGA328P
+; Created: 1/30/2024 9:10:47 AM
+; Author : Fatima
+;********************************************************************************************************************************************
+
+;********************************************************************************************************************************************
+;ENCABEZADO
+;********************************************************************************************************************************************
+
+ .INCLUDE "M328PDEF.INC"
+ .CSEG
+ .ORG 0x00
+
+;********************************************************************************************************************************************
+; STACK POINTER
+;********************************************************************************************************************************************
+
+	LDI R16, LOW(RAMEND)
+	OUT SPL, R16
+	LDI R17, HIGH(RAMEND)
+	OUT SPH, R17
+
+	.DEF temp = R16 ; Definir un registro temporal
+
+	LDI R16, 0b1111_1111 ; salidas
+	OUT DDRB, R16
+
+;********************************************************************************************************************************************
+; SETUP
+;********************************************************************************************************************************************
+
+Inicio:
+    ldi R17, 0b00000000 ; Inicializa el contador en 0
+    out PORTB, R17      ; poner en el puerto B con el valor del contador
+
+Incremento:
+    ldi temp, 100        ; Carga el valor para esperar aproximadamente 100 ms
+    call EsperarMS		 ; Esperar los ms deseados
+    inc R17             ; Incrementa el contador
+    cpi R17, 16         ; comparar con 16 
+    breq Overflow		; si es igual a 16, reinicia el contador
+    out PORTB, R17      ; cargar el valor del contador al puerto B
+    rjmp Incremento 
+
+Overflow:
+    ldi temp, 0b00000000 ; Reinicia el contador a 0
+    out PORTB, temp      ; Actualiza el puerto B con el nuevo valor del contador
+    rjmp Incremento  ; Salta de nuevo al bucle principal
+
+EsperarMS:
+    ldi temp, (1 << CS00) | (1 << CS01) ; Prescaler 64 
+    out TCCR0B, temp
+    ldi temp, 100        ; esperar aproximadamente 100 ms
+    out TCNT0, temp
+
+EsperarLoop:
+    sbis TIFR0, TOV0     ; esperar la bandera de desbordamiento a que este establecida
+    rjmp EsperarLoop
+    sbi TIFR0, TOV0      ; limpiar la bandera
+    ret
