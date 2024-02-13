@@ -1,0 +1,173 @@
+;*******************************************************************************************************************************************
+; Universidad del Valle de Guatemala
+; IE2023 Programación de MIncrementarrocontroladores
+; main.asm
+; Proyecto: LAB2
+; Hardware: ATMEGA328P
+; Created: 1/30/2024 9:10:47 AM
+; Author : Fatima Urrutia
+;********************************************************************************************************************************************
+
+;********************************************************************************************************************************************
+;ENCABEZADO
+;********************************************************************************************************************************************
+
+.include "M328PDEF.inc"
+.cseg
+.org 0x00
+
+;********************************************************************************************************************************************
+;STACK POINTER
+;********************************************************************************************************************************************
+
+LDI R16, LOW(RAMEND)
+OUT SPL, R16
+LDI R17, HIGH(RAMEND)
+OUT SPH, R17
+
+;********************************************************************************************************************************************
+;TABLA
+;********************************************************************************************************************************************
+
+TABLASEG: .DB 0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x6F, 0x77, 0x7C, 0x39, 0x5E, 0x79, 0x71
+
+;********************************************************************************************************************************************
+;CONFIGURACION
+;********************************************************************************************************************************************
+
+Setup:
+		LDI R16, (1 << CLKPCE) ;PRESCALER para 1 MHz
+		STS CLKPR, R16 
+		LDI R16, 0b0000_0100
+		STS CLKPR, R16 ;DIVIDIR LA FRECUENCIA POR 16
+
+		SBI DDRB, PB5 ; Limpiar PB5
+		CBI PORTB, PB5
+
+		CALL TimerC ; Subrutina timer 0
+
+		LDI R20, 0	;SETEAR VARIABLES del timer
+		LDI R21, 0
+
+		LDI R16, 0XFF ; Salidas para leds
+		OUT DDRB, R16
+
+		LDI R16, 0XFF ; Salidas para display
+		OUT DDRD, R16
+
+		LDI R16, 0X00 ; Entradas
+		OUT DDRC, R16
+		LDI R16, 0b0011_1111 ; Activar pull-ups
+		OUT PORTC, R16
+
+		LDI ZH, HIGH(TABLASEG << 1) ; Configurar tabla
+		LDI ZL, LOW(TABLASEG << 1)
+
+		LDI R17, 0xFF 
+		MOV R18, R17
+		LDI R23, 0x00
+
+		LPM R22, Z ;Setear 0 en display
+		OUT PORTD, R22
+
+;********************************************************************************************************************************************
+;CODE
+;********************************************************************************************************************************************
+
+LOOP:
+		IN R16, TIFR0
+		CPI R16, (1<<TOV0)	;Si hay desbordamiento
+		BRNE LOOP
+		LDI R16, 97
+		OUT TCNT0, R16		;cargar 100 ms
+		SBI TIFR0, TOV0		;Limpiar bandera 
+
+		Call Display	; subrutina display
+		Call Comparar ; subrutina de comparacion
+
+		INC R20
+		CPI R20, 10	;Loop hasta que pase 1s
+		BRNE LOOP
+
+		CLR R20
+
+		CPI R21, 0x0F ; Verificar si hay overflow
+		BREQ OVERFLOW
+		INC R21			; Incrementar contador de leds							
+		OUT PORTB, R21
+		JMP LOOP
+
+;********************************************************************************************************************************************
+;SUBRUTINAS
+;********************************************************************************************************************************************
+
+OVERFLOW:
+		LDI R21, 0x00
+		OUT PORTB, R21 ; Overflow timer de leds
+		JMP LOOP
+
+TimerC:
+		LDI R16, (1 << CS02) | (1 << CS00)	;Prescales 1024
+		OUT TCCR0B, R16
+		LDI R16, 97 ; 100ms
+		OUT TCNT0, R16
+		RET
+
+Display:
+		MOV R18, R17
+		IN R17, PINC
+		CPSE R18, R17	; Antirebote 
+		RJMP Botones  ; Verificar el boton activado
+		RET												
+
+Botones:
+		IN R17, PINC
+		MOV R18, R17
+		SBRS R17, PC0 ;Si es el primer boton incrementar
+		JMP Incrementar
+		SBRS R17, PC1
+		JMP Decrementar ;Si es el segundo boton decrementar
+		RET
+	
+
+Incrementar:
+		CPI ZL, 23 ; Verificar si hay overflow
+		BRNE NO_OVERFLOW ; Ir a la subrutina sin overflow
+		LDI R23, 0x00 ; Cargar el valor inicial
+		LDI ZL, 8 ; Regresar el puntero a la posicion cero
+		LPM R22, Z ; cargar el valor de la tabla
+		OUT PORTD, R22 ; Sacar por el puerto
+		RET
+
+NO_OVERFLOW:
+		INC R23 ; Incrementar contador de comparacion
+		LDI R22, 1
+		ADD ZL, R22 ; Subir una posicion en la tabla
+		LPM R22, Z ; cargar el valor actual de la tabla
+		OUT PORTD, R22 ; sacar cor el puerto
+		RET
+
+Decrementar:
+		CPI ZL, 8 ; verificar si hay underflow
+		BRNE NO_UNDERFLOW								
+		LDI R23, 0x0F ; cargar el valor mas alto al contador para la comparacion
+		LDI ZL, 23 ; regresar a la posicion mas alta de la tabla
+		LPM R22, Z ; cargar valor actual de la tabla
+		OUT PORTD, R22
+		RET
+
+NO_UNDERFLOW:
+		DEC R23 ; decrementar contador de comparacion
+		LDI R22, 1
+		SUB ZL, R22 ; bajar una possicion en la tabla
+		LPM R22, Z ; cargar valor actual de la tabla
+		OUT PORTD, R22
+		RET
+
+Comparar: 
+		CPSE R21, R23 ; comparar los valores de los contadores
+		RET ; si no son iguales regresar al loop original
+		LDI R21, 0x00 ; regresar el valor del contador de leds a cero
+		OUT PORTB, R21 ; sacar el valor por el puerto
+		SBI PINB, PB4 ; activar la led para indicar que si eran iguales
+		RET
